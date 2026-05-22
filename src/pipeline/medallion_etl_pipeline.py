@@ -34,9 +34,11 @@ Design Goals:
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.functions import input_file_name, current_timestamp, col, lower, trim
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
 from delta.tables import DeltaTable # type:ignore
 import logging
 import uuid
+from datetime import datetime
 
 # ===================================
 # INIT
@@ -44,9 +46,9 @@ import uuid
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pipeline")
 
-spark = SparkSession.builder \
+"""spark = SparkSession.builder \
     .appName("AmazonPipeline") \
-    .getOrCreate()
+    .getOrCreate()"""
 
 # ===================================
 # CONFIG
@@ -59,15 +61,28 @@ CONFIG = {
         "gold": "amazon_gold"
     },
 
-    "source": "raw_amazon",
+    "source": "/Volumes/workspace/default/amazon_ecommerce/amazon_ecommerce_1M.csv",
     "paths": {
-        "bronze": "bronze_data_lake",
-        "silver": "silver_data_lake",
+#        "bronze": "dbfs:/tmp/amazon_ecommerce/bronze",
+#        "silver": "dbfs:/tmp/amazon_ecommerce/silver",
+#        "gold": "dbfs:/tmp/amazon_ecommerce/gold",
+        "bronze": "/Volumes/workspace/default/amazon_ecommerce/bronze",
+        "silver": "/Volumes/workspace/default/amazon_ecommerce/silver",
+        "gold": "/Volumes/workspace/default/amazon_ecommerce/gold",
     },
 
     "tables": {
         "bronze": "bronze.amazon_raw",
         "silver": "silver.amazon_clean",
+
+        "daily_revenue": "gold.daily_revenue",
+        "user_metrics": "gold.user_metrics",
+        "product_metrics": "gold.product_metrics",
+        "shipping_metrics": "gold.shipping_metrics",
+        "seller_metrics": "gold.seller_metrics",
+        "category_metrics": "gold.category_metrics",
+        "delivery_metrics": "gold.delivery_metrics",
+
         "runs": "control.pipeline_runs",
         "metrics": "control.pipeline_metrics",
         "rejects": "control.pipeline_rejects",
@@ -171,11 +186,6 @@ def init_control_tables():
     It ensures observability infrastructure exists before any ETL execution
     """
 
-    spark.sql("CREATE DATABASE IF NOT EXISTS bronze")
-    spark.sql("CREATE DATABASE IF NOT EXISTS silver")
-    spark.sql("CREATE DATABASE IF NOT EXISTS gold")
-    spark.sql("CREATE DATABASE IF NOT EXISTS control")
-
     spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {CONFIG["tables"]["runs"]} (
         pipeline STRING,
@@ -239,21 +249,27 @@ def log_metrics(run_id: str, metrics: dict):
         Appends results to the metrics Delta table
         """
     
+    now = datetime.now()
     rows = [
-        (run_id, CONFIG["pipeline_name"], k, float(v), None)
+        (run_id, CONFIG["pipeline_name"], k, float(v), now)
         for k, v in metrics.items()
     ]
 
-    df = spark.createDataFrame(rows, [
-        "run_id", "pipeline", "metric_name", "metric_value", "created_ts"
-    ]).withColumn("created_ts", current_timestamp())
+    schema = StructType([
+        StructField("run_id", StringType(), False),
+        StructField("pipeline", StringType(), False),
+        StructField("metric_name", StringType(), False),
+        StructField("metric_value", DoubleType(), False),
+        StructField("created_ts", TimestampType(), False)
+    ])
 
+    df = spark.createDataFrame(rows, schema)
     df.write.mode("append").saveAsTable(CONFIG["tables"]["metrics"])
 
 # ===================================
 # BRONZE - raw ingestion (append-only)
 # ===================================
-def bronze_load(run_id: str) -> DataFrame:
+def bronze_load(run_id: str):
     """
     Ingests raw source data into the bronze layer in an append-only format
 
@@ -279,7 +295,7 @@ def bronze_load(run_id: str) -> DataFrame:
     Args:
         run_id(str): Unique identifier for the pipeline execution
     Returns:
-        DataFrame: The raw ingested DataFrame with metadata columns attached
+        dict: Dictionary with rows_in and rows_out counts
     """
 
     # 1) read files from source, return DataFrame with timestamps/source
@@ -289,26 +305,21 @@ def bronze_load(run_id: str) -> DataFrame:
         .load(CONFIG["source"])
         .withColumn("ingest_ts", current_timestamp())
         .withColumn("ingest_date", F.to_date("ingest_ts"))
-        .withColumn("source_file", input_file_name())
+        .withColumn("source_file", col("_metadata.file_path"))
         .withColumn("run_id", F.lit(run_id))
     )
+
+    row_count = df_raw.count()
 
     # 2) append + save to bronze data lake
     df_raw.write \
         .format("delta") \
         .mode("append") \
         .partitionBy("ingest_date") \
-        .save(CONFIG["paths"]["bronze"])
+        .saveAsTable(CONFIG["tables"]["bronze"])
 
-    # bronze table
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {CONFIG["tables"]["bronze"]}
-        USING DELTA
-        LOCATION '{CONFIG["paths"]["bronze"]}'
-    """)
-
-    logger.info(f"[run_id={run_id}] Bronze rows: {df_raw.count()}")
-    return df_raw
+    logger.info(f"[run_id={run_id}] Bronze rows: {row_count}")
+    return {"rows_in": row_count, "rows_out": row_count}
 
 # ===================================
 # SILVER - clean, standardize, dedupe, idempotent
@@ -439,8 +450,7 @@ def silver_transform(run_id: str):
             "rows_rejected": 0,
             "duplicates": 0
         }
-    
-    df = df.cache()  
+
     rows_in = df.count()
 
     # 2) clean
@@ -466,13 +476,15 @@ def silver_transform(run_id: str):
     rows_out = df_final.count()
 
     # 6) ensure table exists
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {CONFIG["tables"]["silver"]}
-        USING DELTA
-        LOCATION '{CONFIG["paths"]["silver"]}'
-    """)
+    if not spark.catalog.tableExists(CONFIG["tables"]["silver"]):
+        (
+            df_final
+            .write
+            .format("delta")
+            .saveAsTable(CONFIG["tables"]["silver"])
+        )
 
-    target = DeltaTable.forPath(spark, CONFIG["paths"]["silver"])
+    target = DeltaTable.forName(spark, CONFIG["tables"]["silver"])
 
     # 7) idempotent merge
     target.alias("t").merge(
@@ -522,7 +534,7 @@ def build_gold():
     gold_last_ts = get_last_success_ts(CONFIG["pipelines"]["gold"])
     df_silver = spark.table(CONFIG["tables"]["silver"])
     df_incremental = df_silver.filter(
-        col("ingest_ts") > F.list(gold_last_ts)
+        col("ingest_ts") > F.lit(gold_last_ts)
     )
 
     if df_incremental.limit(1).count() == 0:
@@ -581,131 +593,151 @@ def write_gold_tables(df_silver, df_incremental):
             "agg": lambda df: df.groupBy("product_id").agg(
                 F.sum("final_price").alias("CALC_revenue"),
                 F.avg("rating").alias("CALC_avg_rating"),
-                F.sum("review_count").alias("CALC_total_reviews")
+                F.sum("review_count").alias("CALC_total_reviews"),
+                F.count("*").alias("CALC_purchases")
             )
         },
 
-        "category_metrics": {
-            "key": "category",
-            "agg": lambda df: df.groupBy("category").agg(
-                F.sum("final_price").alias("CALC_revenue"),
-                F.count("*").alias("CALC_orders"),
-                F.avg("rating").alias("CALC_avg_rating")
+        "shipping_metrics": {
+            "key": "location",
+            "agg": lambda df: df.groupBy("location").agg(
+                F.avg("shipping_time_days").alias("CALC_avg_shipping_time"),
+                F.count("*").alias("CALC_order_count"),
+                F.sum(F.when(col("is_returned"), 1).otherwise(0)).alias("CALC_return_count")
             )
         },
 
         "seller_metrics": {
             "key": "seller_id",
             "agg": lambda df: df.groupBy("seller_id").agg(
-                F.sum("final_price").alias("CALC_revenue"),
-                F.avg("seller_rating").alias("CALC_avg_seller_rating"),
-                F.count("*").alias("CALC_orders_fulfilled")
+                F.sum("final_price").alias("CALC_total_revenue"),
+                F.avg("seller_rating").alias("CALC_avg_rating"),
+                F.countDistinct("user_id").alias("CALC_unique_customers")
+            )
+        },
+
+        "category_metrics": {
+            "key": "category",
+            "agg": lambda df: df.groupBy("category").agg(
+                F.sum("final_price").alias("CALC_total_revenue"),
+                F.avg("rating").alias("CALC_avg_rating"),
+                F.count("*").alias("CALC_order_count")
             )
         },
 
         "delivery_metrics": {
             "key": "delivery_status",
             "agg": lambda df: df.groupBy("delivery_status").agg(
-                F.count("*").alias("CALC_order_count"),
+                F.count("*").alias("CALC_count"),
                 F.avg("shipping_time_days").alias("CALC_avg_shipping_time")
-            )
-        },
-
-        "return_metrics": {
-            "key": "is_returned",
-            "agg": lambda df: df.groupBy("is_returned").agg(
-                F.count("*").alias("CALC_count")
             )
         },
     }
 
-    for name, meta in gold_defs.items():
-        key = meta["key"]
+    for table_name, defn in gold_defs.items():
+        key = defn["key"]
+        agg_fn = defn["agg"]
+        full_table = CONFIG["tables"][table_name]
 
-        # 1) changed keys
+        # 1) identify dimension values affected by incremental data
         changed_keys = df_incremental.select(key).distinct()
 
-        # 2) recompute full aggregation for changed keys
-        df_recompute = meta["agg"](
-            df_silver.join(changed_keys, key)
+        # 2) full re-aggregation for affected keys only
+        df_full_agg = agg_fn(
+            df_silver.join(changed_keys, key, "inner")
         )
 
-        table_name = f"gold.{name}"
-
-        # 3) create table if it doesn't exist/merge if it exists
-        if spark.catalog.tableExists(table_name):
-            target = DeltaTable.forName(spark, table_name)
-          
+        # 3) ensure table exists
+        if not spark.catalog.tableExists(full_table):
+            df_full_agg.write.format("delta").saveAsTable(full_table)
+        else:
+            # 4) merge upsert
+            target = DeltaTable.forName(spark, full_table)
             target.alias("t").merge(
-                df_recompute.alias("s"),
+                df_full_agg.alias("s"),
                 f"t.{key} = s.{key}"
             ).whenMatchedUpdateAll().whenNotMatchedInsertAll().execute()
-        else:
-            df_recompute.write.format("delta").saveAsTable(table_name)
 
 # ===================================
 # ORCHESTRATION
 # ===================================
-def run_pipeline():
+def track_run(pipeline_name: str, func, run_id: str):
     """
-    Orchestrates full end-to-end data pipeline execution
+    Executes a pipeline stage and logs run metadata
 
-    Execution flow:
-    1) Creates new pipeline run record in control table
-    2) Loads raw data into bronze layer
-    3) Processes incremental silver transformation
-    4) Updates gold aggregation tables
-    5) Logs metrics for observability
-    6) Updates run status (SUCCESS/FAILED)
+    This function wraps pipeline execution with observability tracking, capturing start/end timestamps, row counts, and success/failure status
 
-    Guarantees:
-    - Each run is uniquely tracked via run_id
-    - Pipeline is restart-safe via Delta and watermarking
-    - Partial failures are recorded in control tables
+    Behavior:
+    - records start timestamp in control table before execution
+    - invokes the provided function (bronze_load, silver_transform, or build_gold)
+    - on success:
+        - captures returned row counts (rows_in, rows_out)
+        - updates run record with end timestamp and SUCCESS status
+        - returns function's output dictionary
+    - on failure:
+        - updates run record with FAILED status
+        - re-raises the exception to propagate error upstream
 
+    Args:
+        pipeline_name (str): Name of the pipeline stage ("bronze", "silver", "gold")
+        func (callable): Function to execute (must accept run_id parameter)
+        run_id (str): Unique execution identifier for lineage tracking
+    Returns:
+        dict: Output from executed function containing row counts and statistics
     Raises:
-        Exception: Re-raises any failure after loggin to control table
+        Exception: Re-raises any exception encountered during function execution
     """
-    run_id = str(uuid.uuid4())
 
+    # 1) record start
     spark.sql(f"""
         INSERT INTO {CONFIG["tables"]["runs"]}
-        VALUES (
-            '{CONFIG["pipeline_name"]}',
-            '{run_id}',
-            current_timestamp(),
-            NULL,
-            0,
-            0,
-            'RUNNING'
-        )
+        VALUES('{pipeline_name}', '{run_id}', current_timestamp(), null, null, null, 'RUNNING')
     """)
 
     try:
-        bronze_load(run_id)
-        metrics = silver_transform(run_id)
-        build_gold()
-        log_metrics(run_id, metrics)
+        # 2) execute
+        result = func(run_id)
+
+        # 3) update success
+        rows_in = result.get("rows_in", 0) if isinstance(result, dict) else 0
+        rows_out = result.get("rows_out", 0) if isinstance(result, dict) else 0
 
         spark.sql(f"""
             UPDATE {CONFIG["tables"]["runs"]}
-            SET end_ts = current_timestamp(),
-                rows_in = {metrics.get("rows_in",0)},
-                rows_out = {metrics.get("rows_out",0)},
-                status = 'SUCCESS'
-            WHERE run_id = '{run_id}'
+            SET end_ts = current_timestamp(), status = 'SUCCESS', rows_in = {rows_in}, rows_out = {rows_out}
+            WHERE run_id = '{run_id}' AND pipeline = '{pipeline_name}'
         """)
+
+        return result
 
     except Exception as e:
-        logger.error(str(e))
-
+        # 4) log failure
         spark.sql(f"""
             UPDATE {CONFIG["tables"]["runs"]}
-            SET end_ts = current_timestamp(),
-                status = 'FAILED'
-            WHERE run_id = '{run_id}'
+            SET end_ts = current_timestamp(), status = 'FAILED'
+            WHERE run_id = '{run_id}' AND pipeline = '{pipeline_name}'
         """)
-        raise
+        raise e
+
+def run_pipeline():
+    """
+    Executes the full ETL pipeline from Bronze -> Silver -> Gold
+    
+    Entry point for batch orchestration
+    Runs each stage sequentially with observability tracking
+    Logs execution metrics to control tables
+    Each stage is tracked with run-level observability
+    """
+
+    run_id = str(uuid.uuid4())
+
+    bronze_result = track_run("bronze", bronze_load, run_id)
+    log_metrics(run_id, {"bronze_rows": bronze_result.get("rows_in", 0)})
+
+    silver_result = track_run(CONFIG["pipelines"]["silver"], silver_transform, run_id)
+    log_metrics(run_id, {"silver_rows_out": silver_result.get("rows_out", 0)})
+
+    track_run(CONFIG["pipelines"]["gold"], lambda _: build_gold(), run_id)
 
 # ===================================
 # ENTRY
