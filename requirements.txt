@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------
+# Runtime dependencies
+# ---------------------------------------------------------------
+# NOTE: pyspark and delta-spark are intentionally excluded here.
+# Both are provided by the Databricks runtime environment and
+# pinned to specific versions per cluster config. Installing them
+# locally via pip can cause version conflicts.
+#
+# If you need to run this locally outside Databricks, install:
+#   pip install pyspark==<version matching your DBR>
+#   pip install delta-spark==<version matching your DBR>
+# See: https://docs.delta.io/latest/releases.html for the matrix.
+
+# ---------------------------------------------------------------
+# Development & testing
+# ---------------------------------------------------------------
+pytest==8.3.5          # unit testing
+pytest-mock==3.14.0    # mocking Spark sessions in tests
+
+# ---------------------------------------------------------------
+# Future: dbt
+# ---------------------------------------------------------------
+dbt-core==1.9.0
+dbt-databricks==1.9.0
