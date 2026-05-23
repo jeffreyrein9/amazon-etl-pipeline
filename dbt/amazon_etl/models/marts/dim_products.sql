@@ -21,7 +21,7 @@ select
 
     --volume
     count(*) as total_orders,
-    sum(final_price) as total_revenue,
+    round(sum(final_price), 2) as total_revenue,
 
     --quality signals
     round(avg(rating), 2) as avg_rating,

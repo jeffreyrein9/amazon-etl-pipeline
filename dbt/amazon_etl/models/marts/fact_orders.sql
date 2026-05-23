@@ -17,8 +17,8 @@ select
 
     --time
     purchase_date,
-    date_trunc('month', purchase_date) as purchase_month,
-    date_trunc('week', purchase_date) as purchase_week,
+    cast(date_trunc('month', purchase_date) as date) as purchase_month,
+    cast(date_trunc('week', purchase_date) as date) as purchase_week,
     year(purchase_date) as purchase_year,
 
     --product

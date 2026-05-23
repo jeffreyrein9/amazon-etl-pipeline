@@ -14,7 +14,7 @@ select
 
     --purchase behavior
     count(*) as total_orders,
-    sum(final_price) as lifetime_value,
+    round(sum(final_price), 2) as lifetime_value,
     round(avg(final_price), 2) as avg_order_value,
     min(purchase_date) as first_purchase_date,
     max(purchase_date) as last_purchase_date,
