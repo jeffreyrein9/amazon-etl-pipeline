@@ -52,6 +52,7 @@ banded as (
 select  
     discount_band,
     discount_band_sort,
+    category,
 
     --volume
     count(*) as total_orders,
