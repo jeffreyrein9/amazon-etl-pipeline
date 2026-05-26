@@ -31,7 +31,7 @@ banded as (
             when shipping_time_days > 7
                 and shipping_time_days <= 14 then 3
             else 4
-        end as shipping_band_sort,
+        end as shipping_band_sort
 
     from orders
 )

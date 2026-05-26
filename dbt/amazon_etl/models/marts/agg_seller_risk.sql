@@ -68,7 +68,7 @@ select
             and return_rate_rank <= (select count(*) * 0.25 from seller_stats)
         then true
         else false
-    end as high_risk_flag
+    end as high_risk_flag,
 
     --normalized rating vs return score
     --converts return_rate_pct to 0-5 scale using actual data range

@@ -28,7 +28,7 @@ banded as (
             when discount_pct > 40
                 and discount_pct <= 50 then '41-50%'
             else '50%+'
-        end as discount_band
+        end as discount_band,
 
         --used for sorting in Tableau
         case
@@ -59,7 +59,7 @@ select
 
     --pricing
     cast(round(avg(price), 2) as decimal(15, 2)) as avg_list_price,
-    cast(round(avg(final_price, 2) as decimal(15, 2)) as avg_selling_price,
+    cast(round(avg(final_price), 2) as decimal(15, 2)) as avg_selling_price,
     cast(round(avg(discount_amount), 2) as decimal(15, 2)) as avg_discount_amount,
     round(avg(discount_pct), 2) as avg_discount_pct,
 
