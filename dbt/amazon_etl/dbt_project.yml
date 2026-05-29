@@ -33,4 +33,4 @@ models:
   amazon_etl:
     marts:
       +materialized: table
-      +schema: gold_dbt
+      +schema: gold
