@@ -63,6 +63,7 @@ select
 
     --returns
     sum(case when is_returned then 1 else 0 end) as total_returns,
+    sum(case when is_returned then final_price else 0 end) as returned_revenue,
 
     --quality signal: do discounted items have lower ratings?
     round(avg(rating), 2) as avg_rating
