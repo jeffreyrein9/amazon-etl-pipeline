@@ -18,7 +18,7 @@ select
     count(*) as total_orders,
 
     --revenue
-    round(sum(final_price), 2) as total_revenue
+    round(sum(final_price), 2) as total_revenue,
     sum(case when not is_returned then final_price else 0 end) as net_revenue
 
 from orders
