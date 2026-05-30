@@ -12,13 +12,22 @@ select
     category,
     subcategory,
 
+    --volume
     count(*) as total_orders,
     count(distinct user_id) as unique_customers,
     count(distinct product_id) as unique_products,
+
+    --revenue
     round(sum(final_price), 2) as total_revenue,
     round(avg(final_price), 2) as avg_order_value,
+
+    --discount
     round(avg(discount_pct), 2) as avg_discount_pct,
+
+    --rating
     round(avg(rating), 2) as avg_rating,
+
+    --returns
     sum(case when is_returned then 1 else 0 end) as total_returns,
     round(sum(case when is_returned then 1 else 0 end)
         / count(*) * 100, 2) as return_rate_pct
