@@ -59,6 +59,7 @@ select
 
     --revenue
     cast(round(sum(final_price), 2) as decimal(15, 2)) as total_revenue,
+    sum(case when not is_returned then final_price else 0 end) as net_revenue,
 
     --returns
     sum(case when is_returned then 1 else 0 end) as total_returns,
