@@ -5,6 +5,7 @@ Medallion Architecture (Bronze->Silver->Gold) for Amazon e-commerce data.
 
 ## Architecture
 
+```text
 Raw CSV (Databricks Volumes)
             |
             |
@@ -23,6 +24,7 @@ Idempotent merge into clean Delta table.                                        
 Gold Spark - Incremental business aggregations via Spark.           Gold DBT - Curated semantic models via dbt-databricks.                          
 Only recomputes dimension groups touched by new data.               (business logic, joins, reporting-ready)
 7 analytical tables (revenue, users, products, etc.)
+```
 
 ## Control Plane
 Every run is tracked in Delta control tables:
@@ -32,16 +34,19 @@ Every run is tracked in Delta control tables:
 
 ## Tech Stack
 
+```text
 | Layer                     | Technology                        |
------------------------------------------------------------------
+----------------------------|------------------------------------
 | Compute                   | Apache Spark (Databricks Runtime) |
 | Storage                   | Delta Lake                        |
 | Orchestration             | Databricks Jobs                   |
 | Transformation            | dbt-databricks                    |
 | Language                  | Python 3                          |
+```
 
 ## Project Structure
 
+```text
 amazon-etl-pipeline/
 │
 ├── src/
@@ -63,9 +68,11 @@ amazon-etl-pipeline/
 ├── .gitignore
 ├── requirements.txt
 └── README.md
+```
 
 ## Gold Layer Tables (Spark)
 
+```text
 | Table                     | Grain             | Key Metrics                                   |
 -------------------------------------------------------------------------------------------------
 | gold.daily_revenue        | purchase_date     | total revenue, order count                    |
@@ -75,6 +82,7 @@ amazon-etl-pipeline/
 | gold.seller_metrics       | seller_id         | total revenue, avg rating, unique customers   |
 | gold.category_metrics     | category          | total revenue, avg rating, order count        |
 | gold.delivery_metrics     | delivery_status   | count, avg shipping time                      |
+```
 
 ## Data Source
 
