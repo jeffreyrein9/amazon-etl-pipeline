@@ -36,7 +36,7 @@ Every run is tracked in Delta control tables:
 
 ```text
 | Layer                     | Technology                        |
-----------------------------|------------------------------------
+|---------------------------|-----------------------------------|
 | Compute                   | Apache Spark (Databricks Runtime) |
 | Storage                   | Delta Lake                        |
 | Orchestration             | Databricks Jobs                   |
@@ -74,7 +74,7 @@ amazon-etl-pipeline/
 
 ```text
 | Table                     | Grain             | Key Metrics                                   |
--------------------------------------------------------------------------------------------------
+|---------------------------|-------------------|-----------------------------------------------|
 | gold.daily_revenue        | purchase_date     | total revenue, order count                    |
 | gold.user_metrics         | user_id           | total spent, unique products, avg order value |
 | gold.product_metrics      | product_id        | revenue, avg rating, total reviews, purchases |
