@@ -95,7 +95,7 @@ Raw data is stored in Databricks Volumes and is not committed to this repository
 
 ## Pipeline Design Principles
 
-- INCREMENTAL PROCESSING — watermark-based filtering so each run only touches new data
-- IDEMPOTENT — safe to re-run without creating duplicates (row hashing + Delta merge)
-- OBSERVABILITY — every run logged with row counts, timing, and status
-- SEPARATION OF CONCERNS — each layer is independently testable and replaceable
+- Incremental Processing - watermark-based filtering so each run only touches new data
+- Idempotent - safe to re-run without creating duplicates (row hashing + Delta merge)
+- Observability - every run logged with row counts, timing, and status
+- Separation of Concerns - each layer is independently testable and replaceable
