@@ -44,6 +44,13 @@ Every run is tracked in Delta control tables:
 | Language                  | Python 3                          |
 ```
 
+## Dashboard
+
+[View on Tableau Public](https://public.tableau.com/app/profile/jeffrey.rein/viz/AmazonE-CommerceRevenueOverview/Dashboard1)
+
+Interactive dashboard analyzing FY2026 vs FY2025 Amazon e-commerce revenue built on a full end-to-end data pipeline. Features
+KPI cards with sparklines, revenue by category and subcategory, and a violin plot showing order value distribution by category.
+
 ## Project Structure
 
 ```text
@@ -61,6 +68,7 @@ amazon-etl-pipeline/
 │           └── medallion_etl_pipeline.py  # Original single-file version (reference)
 │
 ├── notebooks/                 # Databricks notebooks for exploration
+│   └── violin_plot.py         # Matplotlib violin plot for order value distribution
 ├── dbt/                       # dbt project (coming soon)
 ├── docs/                      # Architecture diagrams and notes
 ├── tests/                     # Unit tests
